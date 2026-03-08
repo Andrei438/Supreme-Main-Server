@@ -30,17 +30,19 @@ services:
       retries: 3
     labels:
       - "traefik.enable=true"
-      # Primary domain (all paths)
-      - "traefik.http.routers.main-server.rule=Host(`cloud.supreme-cheats.xyz`)"
-      - "traefik.http.routers.main-server.entrypoints=websecure"
-      - "traefik.http.routers.main-server.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.main-server.service=main-server"
-      # Admin subdomain → /logs/* only
-      - "traefik.http.routers.main-server-admin.rule=Host(`admin.supreme-cheats.xyz`) && PathPrefix(`/logs`)"
-      - "traefik.http.routers.main-server-admin.entrypoints=websecure"
-      - "traefik.http.routers.main-server-admin.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.main-server-admin.service=main-server"
-      # Shared backend
+      # Dashboard Subdomain (DASHBOARD ONLY)
+      - "traefik.http.routers.main-server-dashboard.rule=Host(`admin.supreme-cheats.xyz`) && (PathPrefix(`/logs`) || PathPrefix(`/static`) || Path(`/`, `/logout`))"
+      - "traefik.http.routers.main-server-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.main-server-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.main-server-dashboard.service=main-server"
+      
+      # API Subdomain (API ONLY)
+      - "traefik.http.routers.main-server-api.rule=Host(`cloud.supreme-cheats.xyz`) && (PathPrefix(`/api`) || PathPrefix(`/log`) || PathPrefix(`/health`))"
+      - "traefik.http.routers.main-server-api.entrypoints=websecure"
+      - "traefik.http.routers.main-server-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.main-server-api.service=main-server"
+      
+      # Shared Load Balancer
       - "traefik.http.services.main-server.loadbalancer.server.port=8000"
     networks:
       - dokploy-network
