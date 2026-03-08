@@ -948,6 +948,23 @@ async def submit_log(log_data: LogEntryData, request: Request, db: Session = Dep
 # 🖥️ DASHBOARD UI Endpoints (from logger-server.zip/app.py)
 # =========================================================================
 
+@app.middleware("http")
+async def dashboard_middleware(request: Request, call_next):
+    # CRITICAL: Only intercept requests for the /logs path
+    if not request.url.path.startswith("/logs"):
+        return await call_next(request)
+
+    # Allow access to static files and the login page without session
+    if request.url.path in ["/logs/login", "/logs/static", "/logs/favicon.png"]:
+        return await call_next(request)
+    
+    # Check session
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id or not await redis_manager.get_session(session_id):
+        return RedirectResponse(url="/logs/login", status_code=303)
+        
+    return await call_next(request)
+
 @app.get("/logs/login", response_class=templates.TemplateResponse)
 async def get_login(request: Request):
     """Serve the login page or redirect if already logged in."""
