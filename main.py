@@ -1068,10 +1068,6 @@ async def health_check():
     status_code = 200 if health["status"] == "ok" else 503
     return JSONResponse(content=health, status_code=status_code)
 
-@app.get("/", response_class=HTMLResponse)
-async def root_redirect():
-    """Redirects the root path to the main logs dashboard."""
-    return RedirectResponse(url="/logs/view")
 
 @app.get("/logs", response_class=HTMLResponse)
 @app.get("/logs/", response_class=HTMLResponse)
