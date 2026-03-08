@@ -43,13 +43,13 @@
                 </div>
 
                 <select id="logLevelFilter" class="filter-input">
-                    <option value="">📊 All Levels</option>
-                    <option value="info">ℹ️ Info</option>
-                    <option value="debug">🐛 Debug</option>
-                    <option value="success">✅ Success</option>
-                    <option value="warning">⚠️ Warning</option>
-                    <option value="error">❌ Error</option>
-                    <option value="critical">🔥 Critical</option>
+                    <option value="" {% if not level_filter %}selected{% endif %}>📊 All Levels</option>
+                    <option value="info" {% if level_filter == 'info' %}selected{% endif %}>ℹ️ Info</option>
+                    <option value="debug" {% if level_filter == 'debug' %}selected{% endif %}>🐛 Debug</option>
+                    <option value="success" {% if level_filter == 'success' %}selected{% endif %}>✅ Success</option>
+                    <option value="warning" {% if level_filter == 'warning' %}selected{% endif %}>⚠️ Warning</option>
+                    <option value="error" {% if level_filter == 'error' %}selected{% endif %}>❌ Error</option>
+                    <option value="critical" {% if level_filter == 'critical' %}selected{% endif %}>🔥 Critical</option>
                 </select>
 
                 <button id="resetFilters" class="btn btn-secondary">🔄 Reset</button>
@@ -124,7 +124,7 @@
         {% if total_pages > 1 %}
         <div class="pagination">
             {% if current_page > 1 %}
-            <a href="?page={{ current_page - 1 }}&filter={{ filter_text or '' }}&level={{ request.query_params.get('level', '') }}" class="btn btn-secondary">
+            <a href="?page={{ current_page - 1 }}&filter={{ filter_text or '' }}&level={{ level_filter or '' }}" class="btn btn-secondary">
                 <span>⬅️</span> Previous
             </a>
             {% else %}
@@ -136,7 +136,7 @@
             <span class="page-info">Page {{ current_page }} of {{ total_pages }}</span>
 
             {% if current_page < total_pages %}
-            <a href="?page={{ current_page + 1 }}&filter={{ filter_text or '' }}&level={{ request.query_params.get('level', '') }}" class="btn btn-secondary">
+            <a href="?page={{ current_page + 1 }}&filter={{ filter_text or '' }}&level={{ level_filter or '' }}" class="btn btn-secondary">
                 Next <span>➡️</span>
             </a>
             {% else %}
@@ -212,7 +212,7 @@
 
         async function fetchActiveUsers() {
             try {
-                const response = await fetch('/active_users_data');
+                const response = await fetch('/logs/active_users_data');
                 if (!response.ok) {
                     if (response.status === 401) window.location.reload();
                     console.error('Failed to fetch active users:', response.status);
@@ -384,18 +384,21 @@
             },
             
             attachEventListeners() {
-                // Use 'change' (Enter key or blur) to trigger reload for server-side search
+                // Trigger server-side reload on Enter key in search box
+                this.filters.search?.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); this.handleFilterChange(); }
+                });
+                // Also trigger on blur (when user clicks away)
                 this.filters.search?.addEventListener('change', () => this.handleFilterChange());
                 this.filters.level?.addEventListener('change', () => this.handleFilterChange());
                 this.filters.resetBtn?.addEventListener('click', () => this.resetFilters());
             },
 
             applyFiltersFromURL() {
+                // Pre-fill the search box from URL (level dropdown is pre-selected server-side via Jinja)
                 const urlParams = new URLSearchParams(window.location.search);
                 const filter = urlParams.get('filter');
-                const level = urlParams.get('level');
                 if (filter) this.filters.search.value = filter;
-                if (level) this.filters.level.value = level;
             },
 
             handleFilterChange() {
@@ -403,15 +406,13 @@
                 const newValue = this.filters.search.value.trim();
                 const newLevel = this.filters.level.value;
                 
-                // Only reload if changed
-                if (newValue !== (urlParams.get('filter') || '') || newLevel !== (urlParams.get('level') || '')) {
-                    urlParams.set('filter', newValue);
-                    urlParams.set('level', newLevel);
-                    urlParams.delete('page'); // Reset to page 1 on new filter
-                    window.location.href = '?' + urlParams.toString();
-                }
+                urlParams.set('filter', newValue);
+                urlParams.set('level', newLevel);
+                urlParams.delete('page'); // Reset to page 1 on new filter
+                window.location.href = '?' + urlParams.toString();
             },
 
+            // Client-side filter is only used for real-time SSE logs (not paginated ones)
             applyFilters() {
                 const logCards = document.querySelectorAll('.log-card');
                 let visibleCount = 0;

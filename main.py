@@ -298,11 +298,13 @@ def format_iso_timestamp(iso_str):
     except ValueError:
         return iso_str
 
-def get_logs(filter_text: str, page: int = 1, page_size: int = 100):
+def get_logs(filter_text: str, level_filter: str = '', page: int = 1, page_size: int = 100):
     """Fetches a paginated list of logs from the SQLite database."""
-    # 🌟 ROBUSTNESS FIX: Limit filter text length to prevent DoS via long queries.
+    # Limit filter text length to prevent DoS via long queries.
     if len(filter_text) > 100:
         filter_text = filter_text[:100]
+    if len(level_filter) > 20:
+        level_filter = ''
 
     conn = sqlite3.connect(LOG_DATABASE_FILE)
     
@@ -312,29 +314,40 @@ def get_logs(filter_text: str, page: int = 1, page_size: int = 100):
         
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='logs'")
         if not c.fetchone():
-            return [], 0 # Return empty list and zero total pages if table is missing
+            return [], 0
 
         offset = (page - 1) * page_size
-        
+        conditions = []
+        params: list = []
+
+        # Server-side text search across key columns
         if filter_text:
-            filter_pattern_safe = f'%{filter_text}%'
-            params = (filter_pattern_safe,) * 6
-            base_query = "FROM logs WHERE log_title LIKE ? OR log_message LIKE ? OR username LIKE ? OR remote_addr LIKE ? OR hardware_id LIKE ? OR user_id LIKE ?"
-            count_query = f"SELECT COUNT(*) {base_query}"
-            query = f"SELECT * {base_query} ORDER BY id DESC LIMIT {page_size} OFFSET {offset}"
-            c.execute(query, params)
-        else:
-            count_query = "SELECT COUNT(*) FROM logs"
-            query = f"SELECT * FROM logs ORDER BY id DESC LIMIT {page_size} OFFSET {offset}" # No params needed here
-            c.execute(query)
-            
+            filter_pattern = f'%{filter_text}%'
+            text_conditions = (
+                "(log_title LIKE ? OR log_message LIKE ? OR username LIKE ? "
+                "OR remote_addr LIKE ? OR hardware_id LIKE ? OR user_id LIKE ?)"
+            )
+            conditions.append(text_conditions)
+            params.extend([filter_pattern] * 6)
+
+        # Server-side level filter
+        if level_filter:
+            conditions.append("LOWER(log_level) = ?")
+            params.append(level_filter.lower())
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        count_query = f"SELECT COUNT(*) FROM logs {where_clause}"
+        total_logs = c.execute(count_query, params).fetchone()[0]
+        total_pages = max(1, (total_logs + page_size - 1) // page_size)
+
+        data_query = f"SELECT * FROM logs {where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
+        c.execute(data_query, params + [page_size, offset])
         logs = c.fetchall()
-        total_logs = c.execute(count_query, params if filter_text else ()).fetchone()[0]
-        total_pages = (total_logs + page_size - 1) // page_size
+
         return logs, total_pages
         
     finally:
-        # 🌟 FIX: Close the connection after use
         conn.close()
 
 async def update_active_user(user_id: str, username: str, photo_url: str):
@@ -469,7 +482,7 @@ async def require_dashboard_session_html(request: Request, response: JSONRespons
     
     # If not authenticated, redirect to login (Browser follows this 303)
     # Raising an exception with a redirection status code is how FastAPI/Starlette handles redirects in dependencies.
-    raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, detail="Not authenticated", headers={"Location": "/login"})
+    raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, detail="Not authenticated", headers={"Location": "/logs/login"})
 
 # Dependency for API/AJAX endpoints (returns JSON 401)
 async def require_dashboard_session_api(request: Request) -> str:
@@ -955,20 +968,20 @@ async def submit_log(log_data: LogEntryData, request: Request):
 # 🖥️ DASHBOARD UI Endpoints (from logger-server.zip/app.py)
 # =========================================================================
 
-@app.get("/login", response_class=templates.TemplateResponse)
+@app.get("/logs/login", response_class=templates.TemplateResponse)
 async def get_login(request: Request):
     """Serve the login page or redirect if already logged in."""
     # More direct check: if the session cookie is valid, redirect to the dashboard.
     # 🌟 FIX: Check session in Redis
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if await redis_manager.get_session(session_id):
-        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/logs/view", status_code=status.HTTP_302_FOUND)
     
     # Otherwise, show the login page.
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
 
-@app.post("/login")
+@app.post("/logs/login")
 async def post_login(request: Request, otp_code: str = Form(...)):
     """Handle 2FA submission."""
     # 🌟 PRODUCTION REFACTOR: Use Redis for distributed login rate limiting.
@@ -995,7 +1008,7 @@ async def post_login(request: Request, otp_code: str = Form(...)):
         # 🌟 FIX: Store session in Redis instead of in-memory dict
         await redis_manager.set_session(session_id, SESSION_TIMEOUT_MINUTES)
         
-        response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+        response = RedirectResponse(url="/logs/view", status_code=status.HTTP_302_FOUND)
         # Set a secure cookie for the session
         response.set_cookie(
             key=SESSION_COOKIE_NAME, 
@@ -1018,32 +1031,37 @@ async def logout(request: Request):
     if session_id:
         await redis_manager.delete_session(session_id)
 
-    response = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    response = RedirectResponse(url="/logs/login", status_code=status.HTTP_302_FOUND)
     response.delete_cookie(key=SESSION_COOKIE_NAME)
     return response
 
 @app.get("/", response_class=HTMLResponse)
 async def root_redirect():
     """Redirects the root path to the main logs dashboard."""
-    return RedirectResponse(url="/logs")
+    return RedirectResponse(url="/logs/view")
 
-@app.get("/logs", response_class=HTMLResponse)
+@app.get("/logs/view", response_class=HTMLResponse)
 async def show_logs(request: Request, session_id: str = Depends(require_dashboard_session_html)):
-    # 🌟 PERFORMANCE FIX: Add pagination to the logs view.
     filter_text = request.query_params.get("filter", "")
+    level_filter = request.query_params.get("level", "")
     try:
         page = int(request.query_params.get("page", "1"))
         if page < 1: page = 1
     except ValueError:
         page = 1
     
-    logs_data, total_pages = await asyncio.to_thread(get_logs, filter_text, page=page)
+    logs_data, total_pages = await asyncio.to_thread(get_logs, filter_text, level_filter, page=page)
     
-    # Convert sqlite3.Row objects to standard Python dicts for clean template rendering
     logs = [dict(log) for log in logs_data]
 
-    # Pass pagination data to the template
-    return templates.TemplateResponse("logs.html", {"request": request, "logs": logs, "filter_text": filter_text, "current_page": page, "total_pages": total_pages})
+    return templates.TemplateResponse("logs.html", {
+        "request": request,
+        "logs": logs,
+        "filter_text": filter_text,
+        "level_filter": level_filter,
+        "current_page": page,
+        "total_pages": total_pages
+    })
 
 # 🌟 SSE FIX: New endpoint for streaming logs with Server-Sent Events
 async def log_generator(request: Request):
@@ -1067,7 +1085,7 @@ async def stream_logs(request: Request, session_id: str = Depends(require_dashbo
 
 
 # Use the API dependency for AJAX endpoints
-@app.get("/active_users_data")
+@app.get("/logs/active_users_data")
 async def active_users_data(session_id: str = Depends(require_dashboard_session_api)):
     """API endpoint to return the list of active users for the dashboard JS."""
     all_users_data = await redis_manager.get_active_users()
