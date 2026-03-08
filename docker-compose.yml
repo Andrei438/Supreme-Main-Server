@@ -9,16 +9,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: supreme_server_app
+    container_name: supreme-main-server
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://supreme-main-server-redis:6379
       - DOWNLOAD_FILE_PATH=/main-server/Loader/client.exe
     volumes:
-      - loader_data:/main-server/Loader  # Persistent loader storage (update via API)
-      - logs_data:/main-server/data       # Persistent SQLite logs
+      - loader_data:/main-server/Loader
+      - logs_data:/main-server/data
     depends_on:
       redis:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
 
   redis:
     image: "redis:7-alpine"
-    container_name: supreme_server_redis
+    container_name: supreme-main-server-redis
     restart: unless-stopped
     volumes:
       - redis_data:/data
