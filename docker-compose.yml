@@ -16,18 +16,18 @@ services:
     environment:
       - REDIS_URL=redis://supreme-main-server-redis:6379
       - DOWNLOAD_FILE_PATH=/main-server/Loader/client.exe
-      - DATABASE_URL= # Set this in Dokploy (MySQL)
-      - DATABASE_URL_LOGS= # Set this in Dokploy (PostgreSQL)
-      - TOKEN_VALIDITY_SECONDS=
-      - CLEANUP_INTERVAL_MINUTES=
-      - SECRET_KEY=
-      - XENFORO_API_URL=
-      - XENFORO_API_KEY=
-      - LOGGER_TOTP_SECRET=
-      - LOGGING_API_KEY=
-      - RATE_LIMIT_REQUESTS=
-      - RATE_LIMIT_WINDOW=
-      - LOADER_UPLOAD_KEY=
+      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL_LOGS=${DATABASE_URL_LOGS}
+      - TOKEN_VALIDITY_SECONDS=${TOKEN_VALIDITY_SECONDS}
+      - CLEANUP_INTERVAL_MINUTES=${CLEANUP_INTERVAL_MINUTES}
+      - SECRET_KEY=${SECRET_KEY}
+      - XENFORO_API_URL=${XENFORO_API_URL}
+      - XENFORO_API_KEY=${XENFORO_API_KEY}
+      - LOGGER_TOTP_SECRET=${LOGGER_TOTP_SECRET}
+      - LOGGING_API_KEY=${LOGGING_API_KEY}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW}
+      - LOADER_UPLOAD_KEY=${LOADER_UPLOAD_KEY}
     volumes:
       - loader_data:/main-server/Loader
     depends_on:
