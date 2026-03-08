@@ -908,10 +908,14 @@ async def submit_log(log_data: LogEntryData, request: Request, db: Session = Dep
         path=request.url.path,
         headers=json.dumps(dict(request.headers)),
         remote_addr=request.client.host,
-        raw_body=log_data.model_dump_json(indent=2),
-        profile_url=f"https://supreme-cheats.xyz/forum/index.php?members/{structured_data.get('user_id', '')}"
+        raw_body=log_data.model_dump_json(indent=2)
     )
     
+    # 🌟 FIX: Always calculate/ensure profile_url and photo_url on the server
+    user_id = structured_data.get('user_id', '')
+    if user_id:
+        new_log.profile_url = f"https://supreme-cheats.xyz/forum/index.php?members/{user_id}"
+
     # Fallback for photo
     if not new_log.user_photo_url:
         new_log.user_photo_url = '/logs/static/default-user.png'
