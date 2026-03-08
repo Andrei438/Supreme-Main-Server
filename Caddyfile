@@ -1,0 +1,14 @@
+cloud.supreme-cheats.xyz { 
+    
+    encode gzip zstd
+    
+    reverse_proxy main-server:8000 { 
+        # Keeps the crucial fix for the HTTPS Mixed Content error
+        header_up X-Forwarded-Proto https
+    }
+    
+    log {
+        output stdout
+        format json
+    }
+}

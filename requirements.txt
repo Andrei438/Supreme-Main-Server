@@ -1,0 +1,12 @@
+# requirements.txt
+fastapi
+uvicorn[standard]
+gunicorn
+sqlalchemy
+mysql-connector-python
+pydantic
+httpx
+pyotp
+jinja2
+python-multipart
+redis

@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supreme | Activity Logs</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
+<body>
+    <main>
+        <!-- Page Header with Logo -->
+        <div class="page-header">
+            <img src="/static/supreme_logo.png" alt="Supreme" class="header-logo">
+            <div class="header-text">
+                <h1>Supreme Logs</h1>
+                <p>Real-time system activity tracking and advanced filtering</p>
+            </div>
+        </div>
+
+        <!-- Active Users Widget -->
+        <div class="active-users-widget">
+            <div class="widget-title">👥 Active Users Online</div>
+            <div class="active-users-list" id="active-users-list">
+                <!-- Active users will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Advanced Filtering Section -->
+        <div class="filter-section">
+            <div class="filter-title">⚙️ Advanced Filtering</div>
+            <div class="filter-grid">
+                <div class="search-box">
+                    <span>🔎</span>
+                    <input 
+                        type="text" 
+                        id="searchInput" 
+                        class="filter-input"
+                        placeholder="Search logs, messages, users, IPs..."
+                    >
+                </div>
+
+                <select id="logLevelFilter" class="filter-input">
+                    <option value="">📊 All Levels</option>
+                    <option value="info">ℹ️ Info</option>
+                    <option value="debug">🐛 Debug</option>
+                    <option value="success">✅ Success</option>
+                    <option value="warning">⚠️ Warning</option>
+                    <option value="error">❌ Error</option>
+                    <option value="critical">🔥 Critical</option>
+                </select>
+
+                <button id="resetFilters" class="btn btn-secondary">🔄 Reset</button>
+            </div>
+        </div>
+
+        <!-- Logs Container -->
+        <div class="logs-container" id="logs-container">
+            {% if logs %}
+                <div class="logs-cards">
+                    {% for log in logs %}
+                    <div class="log-card card-level-{{ log.log_level|lower }}" data-level="{{ log.log_level }}">
+                        <!-- Header Section -->
+                        <div class="log-header">
+                            <div class="log-title-section">
+                                <h3 class="log-title">{{ log.log_title }}</h3>
+                                <div class="log-timestamp">{{ log.timestamp | format_time }}</div>
+                            </div>
+                            <span class="log-level-badge log-level-{{ log.log_level|lower }}">
+                                {{ log.log_level }}
+                            </span>
+                        </div>
+
+                        <!-- Message Section -->
+                        <div class="log-message">{{ log.log_message }}</div>
+
+                        <!-- Details Section -->
+                        <div class="log-details">
+                            <div class="detail-item">
+                                <span class="detail-label">👤 User</span>
+                                <span class="detail-value">
+                                    <a href="{{ log.profile_url or '#' }}" target="_blank" class="user-profile-link">
+                                        <img src="{{ log.user_photo_url or '/static/default-user.png' }}" alt="{{ log.username }}" class="active-user-photo">
+                                        <span>{{ log.username }}</span>
+                                    </a>
+                                </span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">🌐 IP Address</span>
+                                <span class="detail-value">{{ log.remote_addr }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">💾 Hardware ID</span>
+                                <span class="detail-value">{{ log.hardware_id }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">🔢 User ID</span>
+                                <span class="detail-value">{{ log.user_id }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Meta Footer Section -->
+                        <div class="log-meta">
+                            <div class="meta-item">
+                                <span class="meta-label">⏰ Entry ID</span>
+                                <span class="meta-value">#{{ log.id }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div id="emptyState" class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <h3 class="empty-state-title">No Activity Logs</h3>
+                    <p class="empty-state-message">There are currently no logs to display. Try adjusting your filters or check back later.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Pagination Controls -->
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if current_page > 1 %}
+            <a href="?page={{ current_page - 1 }}&filter={{ filter_text or '' }}&level={{ request.query_params.get('level', '') }}" class="btn btn-secondary">
+                <span>⬅️</span> Previous
+            </a>
+            {% else %}
+            <button class="btn btn-secondary" disabled style="opacity: 0.5; cursor: not-allowed;">
+                <span>⬅️</span> Previous
+            </button>
+            {% endif %}
+
+            <span class="page-info">Page {{ current_page }} of {{ total_pages }}</span>
+
+            {% if current_page < total_pages %}
+            <a href="?page={{ current_page + 1 }}&filter={{ filter_text or '' }}&level={{ request.query_params.get('level', '') }}" class="btn btn-secondary">
+                Next <span>➡️</span>
+            </a>
+            {% else %}
+            <button class="btn btn-secondary" disabled style="opacity: 0.5; cursor: not-allowed;">
+                Next <span>➡️</span>
+            </button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </main>
+
+    <template id="log-card-template">
+        <div class="log-card" data-level="">
+            <!-- Header Section -->
+            <div class="log-header">
+                <div class="log-title-section">
+                    <h3 class="log-title"></h3>
+                    <div class="log-timestamp"></div>
+                </div>
+                <span class="log-level-badge"></span>
+            </div>
+
+            <!-- Message Section -->
+            <div class="log-message"></div>
+
+            <!-- Details Section -->
+            <div class="log-details">
+                <div class="detail-item">
+                    <span class="detail-label">👤 User</span>
+                    <span class="detail-value">
+                        <a href="#" target="_blank" class="user-profile-link">
+                            <img src="" alt="" class="active-user-photo">
+                            <span></span>
+                        </a>
+                    </span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">🌐 IP Address</span>
+                    <span class="detail-value ip-address"></span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">💾 Hardware ID</span>
+                    <span class="detail-value hwid"></span>
+                </div>
+                <div class="detail-item">
+                    <span class="detail-label">🔢 User ID</span>
+                    <span class="detail-value user-id"></span>
+                </div>
+            </div>
+
+            <!-- Meta Footer Section -->
+            <div class="log-meta">
+                <div class="meta-item">
+                    <span class="meta-label">⏰ Entry ID</span>
+                    <span class="meta-value entry-id"></span>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script>
+        function formatDuration(totalSeconds) {
+            if (totalSeconds < 60) return `${totalSeconds}s`;
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            let result = '';
+            if (hours > 0) result += `${hours}h `;
+            if (minutes > 0) result += `${minutes}m `;
+            if (hours === 0 && minutes > 0) result += `${seconds}s`;
+            return result.trim();
+        }
+
+        async function fetchActiveUsers() {
+            try {
+                const response = await fetch('/active_users_data');
+                if (!response.ok) {
+                    if (response.status === 401) window.location.reload();
+                    console.error('Failed to fetch active users:', response.status);
+                    return;
+                }
+                const users = await response.json();
+                const userListElement = document.getElementById('active-users-list');
+                userListElement.innerHTML = '';
+                if (users.length === 0) {
+                    userListElement.innerHTML = '<div class="no-active-users">No users currently active.</div>';
+                } else {
+                    users.forEach(user => {
+                        const userLink = document.createElement('a');
+                        userLink.href = user.profile_url || '#';
+                        userLink.target = '_blank';
+                        userLink.style.textDecoration = 'none';
+                        const userBadge = document.createElement('div');
+                        userBadge.className = 'active-user-badge';
+                        userBadge.title = `${user.username} has been online for ${formatDuration(user.online_duration)}. Last activity: ${user.time_since}s ago.`;
+                        const userPhoto = document.createElement('img');
+                        userPhoto.src = user.photo_url;
+                        userPhoto.alt = user.username;
+                        userPhoto.className = 'active-user-photo';
+                        const userInfo = document.createElement('div');
+                        userInfo.className = 'active-user-info';
+                        const userName = document.createElement('span');
+                        userName.className = 'active-user-name';
+                        userName.textContent = user.username;
+                        const userTime = document.createElement('span');
+                        userTime.className = 'active-user-duration';
+                        userTime.textContent = `Online for ${formatDuration(user.online_duration)}`;
+                        userInfo.appendChild(userName);
+                        userInfo.appendChild(userTime);
+                        const activityIndicator = document.createElement('span');
+                        activityIndicator.className = 'activity-indicator';
+                        if (user.time_since > 20) {
+                            activityIndicator.classList.add('idle');
+                            userBadge.title += ' (Idle)';
+                        }
+                        userBadge.appendChild(userPhoto);
+                        userBadge.appendChild(userInfo);
+                        userBadge.appendChild(activityIndicator);
+                        userLink.appendChild(userBadge);
+                        userListElement.appendChild(userLink);
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching active users:', error);
+                const userListElement = document.getElementById('active-users-list');
+                userListElement.innerHTML = '<div class="no-active-users">Error loading active users.</div>';
+            }
+        }
+
+        // SSE and Real-time UI logic
+        const RealtimeLogger = {
+            init() {
+                this.logCardTemplate = document.getElementById('log-card-template');
+                this.logsContainer = document.getElementById('logs-container');
+                this.connectToStream();
+            },
+
+            connectToStream() {
+                const eventSource = new EventSource('/logs/stream');
+                eventSource.onmessage = (event) => {
+                    try {
+                        const logData = JSON.parse(event.data);
+                        this.prependLog(logData);
+                    } catch (e) {
+                        console.error("Failed to parse log data:", e);
+                    }
+                };
+                eventSource.onerror = (err) => {
+                    console.error("EventSource failed:", err);
+                    eventSource.close();
+                    setTimeout(() => this.connectToStream(), 5000); // Attempt to reconnect after 5s
+                };
+            },
+
+            formatIsoTimestamp(isoStr) {
+                if (!isoStr) return 'N/A';
+                try {
+                    const dt = new Date(isoStr);
+                    return dt.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+                } catch (e) {
+                    return isoStr;
+                }
+            },
+
+            createLogCard(log) {
+                const card = this.logCardTemplate.content.cloneNode(true).firstElementChild;
+                const logLevel = (log.log_level || 'info').toLowerCase();
+
+                card.className = `log-card card-level-${logLevel}`;
+                card.setAttribute('data-level', logLevel);
+
+                card.querySelector('.log-title').textContent = log.log_title || 'No Title';
+                card.querySelector('.log-timestamp').textContent = this.formatIsoTimestamp(log.timestamp);
+                
+                const badge = card.querySelector('.log-level-badge');
+                badge.className = `log-level-badge log-level-${logLevel}`;
+                badge.textContent = logLevel;
+                
+                card.querySelector('.log-message').textContent = log.log_message || '';
+                
+                const userLink = card.querySelector('.user-profile-link');
+                userLink.href = log.profile_url || '#';
+                
+                const userImg = userLink.querySelector('img');
+                userImg.src = log.user_photo_url || '/static/default-user.png';
+                userImg.alt = log.username || 'N/A';
+                userLink.querySelector('span').textContent = log.username || 'N/A';
+
+                card.querySelector('.ip-address').textContent = log.remote_addr || 'N/A';
+                card.querySelector('.hwid').textContent = log.hardware_id || 'N/A';
+                card.querySelector('.user-id').textContent = log.user_id || 'N/A';
+                card.querySelector('.entry-id').textContent = `#${log.id}`;
+                
+                return card;
+            },
+
+            prependLog(log) {
+                // Only show real-time logs on the first page
+                const urlParams = new URLSearchParams(window.location.search);
+                const page = parseInt(urlParams.get('page')) || 1;
+                if (page !== 1) return;
+
+                const newCard = this.createLogCard(log);
+                const isVisible = UILogManager.shouldShowCard(newCard);
+
+                // Ensure the new card respects the current client-side filters before adding it
+                if (!isVisible) {
+                    newCard.style.display = 'none';
+                }
+
+                let cardsWrapper = this.logsContainer.querySelector('.logs-cards');
+                if (!cardsWrapper) {
+                    this.logsContainer.innerHTML = ''; // Clear empty state
+                    cardsWrapper = document.createElement('div');
+                    cardsWrapper.className = 'logs-cards';
+                    this.logsContainer.appendChild(cardsWrapper);
+                }
+                
+                cardsWrapper.prepend(newCard);
+
+                if (isVisible) {
+                    const emptyState = document.getElementById('emptyState');
+                    if (emptyState) emptyState.style.display = 'none';
+                } else {
+                    const hasVisible = Array.from(cardsWrapper.children).some(c => c.style.display !== 'none');
+                    if (!hasVisible) UILogManager.updateEmptyState(true);
+                }
+            }
+        };
+
+        const UILogManager = {
+            filters: { search: null, level: null, resetBtn: null },
+            
+            init() {
+                this.cacheElements();
+                this.attachEventListeners();
+                this.applyFiltersFromURL();
+                this.applyFilters();
+            },
+            
+            cacheElements() {
+                this.filters.search = document.getElementById('searchInput');
+                this.filters.level = document.getElementById('logLevelFilter');
+                this.filters.resetBtn = document.getElementById('resetFilters');
+            },
+            
+            attachEventListeners() {
+                // Use 'change' (Enter key or blur) to trigger reload for server-side search
+                this.filters.search?.addEventListener('change', () => this.handleFilterChange());
+                this.filters.level?.addEventListener('change', () => this.handleFilterChange());
+                this.filters.resetBtn?.addEventListener('click', () => this.resetFilters());
+            },
+
+            applyFiltersFromURL() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const filter = urlParams.get('filter');
+                const level = urlParams.get('level');
+                if (filter) this.filters.search.value = filter;
+                if (level) this.filters.level.value = level;
+            },
+
+            handleFilterChange() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const newValue = this.filters.search.value.trim();
+                const newLevel = this.filters.level.value;
+                
+                // Only reload if changed
+                if (newValue !== (urlParams.get('filter') || '') || newLevel !== (urlParams.get('level') || '')) {
+                    urlParams.set('filter', newValue);
+                    urlParams.set('level', newLevel);
+                    urlParams.delete('page'); // Reset to page 1 on new filter
+                    window.location.href = '?' + urlParams.toString();
+                }
+            },
+
+            applyFilters() {
+                const logCards = document.querySelectorAll('.log-card');
+                let visibleCount = 0;
+                logCards.forEach(card => {
+                    if (this.shouldShowCard(card)) {
+                        card.style.display = '';
+                        visibleCount++;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+                this.updateEmptyState(visibleCount === 0);
+            },
+
+            shouldShowCard(card) {
+                const levelTerm = this.filters.level.value || '';
+                const searchTerm = this.filters.search.value.trim().toLowerCase();
+
+                const cardLevel = (card.getAttribute('data-level') || '').toLowerCase();
+                const matchesLevel = !levelTerm || cardLevel === levelTerm;
+
+                if (!matchesLevel) return false;
+
+                const cardText = card.textContent.toLowerCase();
+                const matchesSearch = !searchTerm || cardText.includes(searchTerm);
+                
+                return matchesSearch;
+            },
+
+            resetFilters() {
+                this.filters.search.value = '';
+                this.filters.level.value = '';
+                this.handleFilterChange();
+            },
+
+            updateEmptyState(show) {
+                let emptyState = document.getElementById('emptyState');
+                if (!emptyState && show) {
+                    emptyState = document.createElement('div');
+                    emptyState.id = 'emptyState';
+                    emptyState.className = 'empty-state';
+                    emptyState.innerHTML = `
+                        <div class="empty-state-icon">📭</div>
+                        <h3 class="empty-state-title">No Matching Logs</h3>
+                        <p class="empty-state-message">There are no logs that match your current filters.</p>
+                    `;
+                    document.getElementById('logs-container').appendChild(emptyState);
+                } else if (emptyState) {
+                    emptyState.style.display = show ? 'block' : 'none';
+                }
+            }
+        };
+
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setInterval(fetchActiveUsers, 1000); // Fetching users every 1s is enough
+            UILogManager.init();
+            RealtimeLogger.init();
+        });
+    </script>
+</body>
+</html>
+</body>
+</html>

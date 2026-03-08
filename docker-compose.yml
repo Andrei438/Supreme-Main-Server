@@ -1,0 +1,64 @@
+version: '3.8'
+
+# =========================================================================
+# Supreme Main Server - Dokploy Compose
+# Subdomain: cloud.supreme-cheats.xyz
+# Databases: External MySQL (DB_URL), internal Redis
+# =========================================================================
+
+services:
+  main-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: supreme_server_app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - DOWNLOAD_FILE_PATH=/main-server/Loader/client.exe
+    volumes:
+      - loader_data:/main-server/Loader  # Persistent loader storage (update via API)
+      - logs_data:/main-server/data       # Persistent SQLite logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.main-server.rule=Host(`cloud.supreme-cheats.xyz`)"
+      - "traefik.http.routers.main-server.entrypoints=websecure"
+      - "traefik.http.routers.main-server.tls.certresolver=letsencrypt"
+      - "traefik.http.services.main-server.loadbalancer.server.port=8000"
+    networks:
+      - dokploy-network
+
+  redis:
+    image: "redis:7-alpine"
+    container_name: supreme_server_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - dokploy-network
+
+volumes:
+  loader_data:
+  logs_data:
+  redis_data:
+
+networks:
+  dokploy-network:
+    external: true

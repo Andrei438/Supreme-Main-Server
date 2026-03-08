@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supreme | Authentification</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="login-page">
+    <div class="login-wrapper">
+        <div class="login-card">
+            <div class="login-header">
+                <img src="/static/supreme_logo.png" alt="Supreme" class="login-icon">
+                <h1 class="login-title">Supreme</h1>
+                <p class="login-subtitle">Logs Access</p>
+            </div>
+
+            {% if error %}
+            <div class="error-banner">⚠️ {{ error }}</div>
+            {% endif %}
+
+            <form method="POST">
+                <div class="form-group">
+                    <label for="otp_code" class="form-label">Verification Code</label>
+                    <input 
+                        type="text" 
+                        id="otp_code" 
+                        name="otp_code" 
+                        class="form-input"
+                        required 
+                        autofocus 
+                        placeholder="000000"
+                        inputmode="numeric" 
+                        pattern="[0-9]{6}"
+                        autocomplete="one-time-code"
+                        maxlength="6"
+                    >
+                </div>
+
+                <button type="submit" class="submit-btn">Access Logs</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
