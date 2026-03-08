@@ -27,6 +27,7 @@ services:
       - LOGGING_API_KEY=
       - RATE_LIMIT_REQUESTS=
       - RATE_LIMIT_WINDOW=
+      - LOADER_UPLOAD_KEY=
     volumes:
       - loader_data:/main-server/Loader
     depends_on:
