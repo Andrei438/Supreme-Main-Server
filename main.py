@@ -261,13 +261,12 @@ SESSION_TIMEOUT_MINUTES = 43200
 SESSION_COOKIE_NAME = "X-Session-ID"
 
 def format_iso_timestamp(iso_str):
-    """Converts ISO format string to a human-readable local time string."""
+    """Converts ISO format string to a UTC string for initial render."""
     try:
         dt_utc = datetime.fromisoformat(iso_str)
         if dt_utc.tzinfo is None or dt_utc.tzinfo.utcoffset(dt_utc) is None:
             dt_utc = dt_utc.replace(tzinfo=timezone.utc)
-        dt_local = dt_utc.astimezone()
-        return dt_local.strftime('%b %d, %Y | %I:%M:%S %p')
+        return dt_utc.strftime('%b %d, %Y | %I:%M:%S %p (UTC)')
     except ValueError:
         return iso_str
 

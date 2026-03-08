@@ -71,7 +71,7 @@
                         <div class="log-header">
                             <div class="log-title-section">
                                 <h3 class="log-title">{{ log.log_title }}</h3>
-                                <div class="log-timestamp">{{ log.timestamp | format_time }}</div>
+                                <div class="log-timestamp" data-utc="{{ log.timestamp }}">{{ log.timestamp | format_time }}</div>
                             </div>
                             <span class="log-level-badge log-level-{{ log.log_level|lower }}">
                                 {{ log.log_level }}
@@ -159,7 +159,7 @@
             <div class="log-header">
                 <div class="log-title-section">
                     <h3 class="log-title"></h3>
-                    <div class="log-timestamp"></div>
+                    <div class="log-timestamp" data-utc=""></div>
                 </div>
                 <span class="log-level-badge"></span>
             </div>
@@ -272,7 +272,42 @@
         }
 
         // SSE and Real-time UI logic
+        const TimeManager = {
+            formatLocal(isoStr) {
+                if (!isoStr) return '';
+                try {
+                    const date = new Date(isoStr);
+                    if (isNaN(date.getTime())) return isoStr;
+                    
+                    const options = { 
+                        month: 'short', 
+                        day: '2-digit', 
+                        year: 'numeric',
+                        hour: '2-digit', 
+                        minute: '2-digit', 
+                        second: '2-digit',
+                        hour12: true 
+                    };
+                    
+                    return date.toLocaleString('en-US', options).replace(',', '') + ' ' + date.toLocaleTimeString('en-US', { hour12: true, timeZoneName: 'short' }).split(' ').pop();
+                } catch (e) {
+                    console.error('Error formatting time:', e);
+                    return isoStr;
+                }
+            },
+
+            adjustAll() {
+                document.querySelectorAll('[data-utc]').forEach(el => {
+                    const utc = el.getAttribute('data-utc');
+                    if (utc) {
+                        el.textContent = this.formatLocal(utc);
+                    }
+                });
+            }
+        };
+
         const RealtimeLogger = {
+            // ... existing code ...
             init() {
                 this.logCardTemplate = document.getElementById('log-card-template');
                 this.logsContainer = document.getElementById('logs-container');
@@ -314,7 +349,9 @@
                 card.setAttribute('data-level', logLevel);
 
                 card.querySelector('.log-title').textContent = log.log_title || 'No Title';
-                card.querySelector('.log-timestamp').textContent = this.formatIsoTimestamp(log.timestamp);
+                const timestampEl = card.querySelector('.log-timestamp');
+                timestampEl.setAttribute('data-utc', log.timestamp);
+                timestampEl.textContent = TimeManager.formatLocal(log.timestamp);
                 
                 const badge = card.querySelector('.log-level-badge');
                 badge.className = `log-level-badge log-level-${logLevel}`;
@@ -481,6 +518,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            TimeManager.adjustAll();
             setInterval(fetchActiveUsers, 1000); // Fetching users every 1s is enough
             UILogManager.init();
             RealtimeLogger.init();
