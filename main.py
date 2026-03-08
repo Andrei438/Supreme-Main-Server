@@ -357,7 +357,7 @@ async def update_active_user(user_id: str, username: str, photo_url: str):
     """
     # Use the static path if photo URL is not provided
     if not photo_url or photo_url == "https://supreme-cheats.xyz/anonymus.png":
-        photo_url = "/static/default-user.png"
+        photo_url = "/logs/static/default-user.png"
 
     # Profile URL placeholder based on the username
     profile_url = f"https://supreme-cheats.xyz/forum/index.php?members/{user_id}"
@@ -389,7 +389,7 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 # Mount Static Files and Templates for Dashboard
 # NOTE: Assumes the logger-server.zip contents are extracted into the same directory structure
-app.mount("/static", StaticFiles(directory="logger-server/static"), name="static")
+app.mount("/logs/static", StaticFiles(directory="logger-server/static"), name="static")
 templates = Jinja2Templates(directory="logger-server/templates")
 templates.env.filters['format_time'] = format_iso_timestamp
 
@@ -943,7 +943,7 @@ async def submit_log(log_data: LogEntryData, request: Request):
         # 🌟 SSE FIX: Add extra fields needed by the frontend before publishing
         log_entry['profile_url'] = f"https://supreme-cheats.xyz/forum/index.php?members/{log_entry.get('user_id', '')}"
         if not log_entry.get('user_photo_url'):
-            log_entry['user_photo_url'] = '/static/default-user.png'
+            log_entry['user_photo_url'] = '/logs/static/default-user.png'
             
         # 🌟 SSE FIX: Publish the newly created log to Redis for real-time streaming
         await redis_manager.publish_log(LOG_CHANNEL, log_entry)
@@ -1024,7 +1024,7 @@ async def post_login(request: Request, otp_code: str = Form(...)):
         logger.warning(f"Invalid 2FA code attempt from IP: {client_ip}")
         return templates.TemplateResponse("login.html", {"request": request, "error": error_message}, status_code=401)
 
-@app.get("/logout")
+@app.get("/logs/logout")
 async def logout(request: Request):
     """Clear session cookie and log out."""
     session_id = request.cookies.get(SESSION_COOKIE_NAME)

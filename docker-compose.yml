@@ -30,13 +30,13 @@ services:
       retries: 3
     labels:
       - "traefik.enable=true"
-      # Dashboard Subdomain (DASHBOARD ONLY)
-      - "traefik.http.routers.main-server-dashboard.rule=Host(`admin.supreme-cheats.xyz`) && (PathPrefix(`/logs`) || PathPrefix(`/static`) || Path(`/`, `/logout`))"
+      # Dashboard Subdomain (admin. - Must be isolated via /logs/ prefix to avoid Dokploy conflicts)
+      - "traefik.http.routers.main-server-dashboard.rule=Host(`admin.supreme-cheats.xyz`) && PathPrefix(`/logs`)"
       - "traefik.http.routers.main-server-dashboard.entrypoints=websecure"
       - "traefik.http.routers.main-server-dashboard.tls.certresolver=letsencrypt"
       - "traefik.http.routers.main-server-dashboard.service=main-server"
       
-      # API Subdomain (API ONLY)
+      # API Subdomain (cloud.)
       - "traefik.http.routers.main-server-api.rule=Host(`cloud.supreme-cheats.xyz`) && (PathPrefix(`/api`) || PathPrefix(`/log`) || PathPrefix(`/health`))"
       - "traefik.http.routers.main-server-api.entrypoints=websecure"
       - "traefik.http.routers.main-server-api.tls.certresolver=letsencrypt"
