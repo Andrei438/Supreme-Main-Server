@@ -10,3 +10,4 @@ pyotp
 jinja2
 python-multipart
 redis
+psycopg2-binary

@@ -23,7 +23,7 @@ from starlette.responses import StreamingResponse
 from pydantic import BaseModel
 
 # --- SQLAlchemy and MySQL Imports (from server-release.py) ---
-from sqlalchemy import create_engine, Column, Integer, String, text, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, text, DateTime, Text, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -56,6 +56,7 @@ def get_required_str(key):
 
 # Core API Config
 DATABASE_URL = get_required_str("DATABASE_URL")
+DATABASE_URL_LOGS = get_required_str("DATABASE_URL_LOGS")
 TOKEN_VALIDITY_SECONDS = get_required_int("TOKEN_VALIDITY_SECONDS")
 CLEANUP_INTERVAL_MINUTES = get_required_int("CLEANUP_INTERVAL_MINUTES")
 SECRET_KEY = get_required_str("SECRET_KEY")
@@ -68,9 +69,6 @@ DOWNLOAD_FILE_PATH = os.environ.get("DOWNLOAD_FILE_PATH", "./Loader/client.exe")
 
 # Admin key for the secure loader upload endpoint. Set this in Dokploy env vars.
 LOADER_UPLOAD_KEY = os.environ.get("LOADER_UPLOAD_KEY", "")
-
-# 🌟 FIX: Point to the database file inside the mounted data volume for robustness.
-LOG_DATABASE_FILE = '/main-server/data/logs.db'
 
 TOTP_SECRET = get_required_str("LOGGER_TOTP_SECRET") 
 ACTIVITY_TIMEOUT_SECONDS = 30 # This is a reasonable default and can remain constant
@@ -126,72 +124,47 @@ def get_db():
             logger.warning(f"Error closing MySQL session: {e}")
 
 # =========================================================================
-# 💾 DATABASE SETUP (SQLite for Logs)
+# 💾 DATABASE SETUP (PostgreSQL for Logs)
 # =========================================================================
 
-def init_log_db():
-    """Initializes the SQLite database for logs."""
-    conn = sqlite3.connect(LOG_DATABASE_FILE)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY,
-            timestamp TEXT,
-            method TEXT,
-            path TEXT,
-            headers TEXT,
-            remote_addr TEXT,
-            
-            user_id TEXT,
-            username TEXT,
-            user_photo_url TEXT,
-            profile_url TEXT,
-            hardware_id TEXT,
-            log_level TEXT,
-            log_title TEXT,
-            log_message TEXT,
-            raw_body TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+logs_engine = create_engine(DATABASE_URL_LOGS)
+LogsBase = declarative_base()
 
-print("Initializing database...")
-init_log_db()
+class LogEntry(LogsBase):
+    __tablename__ = "log_entries"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    timestamp = Column(String(50))
+    log_level = Column(String(20))
+    log_title = Column(String(255))
+    log_message = Column(Text)
+    user_id = Column(String(100))
+    username = Column(String(100))
+    hardware_id = Column(String(255))
+    user_photo_url = Column(String(512))
+    profile_url = Column(String(512))
+    method = Column(String(10))
+    path = Column(String(512))
+    headers = Column(Text)
+    remote_addr = Column(String(50))
+    raw_body = Column(Text)
 
-def create_logs_table():
-    """Ensures the SQLite logs table exists. Must be called on startup."""
+# Create tables in PostgreSQL
+try:
+    LogsBase.metadata.create_all(bind=logs_engine)
+    logger.info("Successfully checked/created PostgreSQL log tables.")
+except Exception as e:
+    logger.error(f"Failed to connect to PostgreSQL logs DB: {e}")
+
+# Dependency for PostgreSQL (Logs)
+def get_logs_db():
+    db = sessionmaker(autocommit=False, autoflush=False, bind=logs_engine)()
     try:
-        conn = sqlite3.connect(LOG_DATABASE_FILE)
-        c = conn.cursor()
-        
-        # NOTE: This SQL schema assumes the full set of log fields used in your /log endpoint
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                log_level TEXT,
-                log_title TEXT,
-                log_message TEXT,
-                user_id TEXT,
-                username TEXT,
-                hardware_id TEXT,
-                user_photo_url TEXT,
-                method TEXT,
-                path TEXT,
-                headers TEXT,
-                remote_addr TEXT,
-                raw_body TEXT
-            )
-        """)
-        conn.commit()
-        conn.close()
+        yield db
     except Exception as e:
-        # Crucial to catch errors here, especially if the path is bad
-        print(f"FATAL ERROR: Could not create logs table in {LOG_DATABASE_FILE}. Error: {e}")
-        
-print("Ensuring logs table exists...")
-create_logs_table()
+        logger.error(f"Failed to get PostgreSQL logs session: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to establish logs database connection")
+    finally:
+        db.close()
 # =========================================================================
 # 🧩 GLOBAL STATE & HELPERS
 # =========================================================================
@@ -299,56 +272,47 @@ def format_iso_timestamp(iso_str):
         return iso_str
 
 def get_logs(filter_text: str, level_filter: str = '', page: int = 1, page_size: int = 100):
-    """Fetches a paginated list of logs from the SQLite database."""
-    # Limit filter text length to prevent DoS via long queries.
+    """Fetches a paginated list of log entries from PostgreSQL using SQLAlchemy."""
     if len(filter_text) > 100:
         filter_text = filter_text[:100]
-    if len(level_filter) > 20:
-        level_filter = ''
-
-    conn = sqlite3.connect(LOG_DATABASE_FILE)
+    
+    # Create a local session for the thread
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=logs_engine)
+    db = SessionLocal()
     
     try:
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
+        query = db.query(LogEntry)
         
-        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='logs'")
-        if not c.fetchone():
-            return [], 0
-
-        offset = (page - 1) * page_size
-        conditions = []
-        params: list = []
-
-        # Server-side text search across key columns
-        if filter_text:
-            filter_pattern = f'%{filter_text}%'
-            text_conditions = (
-                "(log_title LIKE ? OR log_message LIKE ? OR username LIKE ? "
-                "OR remote_addr LIKE ? OR hardware_id LIKE ? OR user_id LIKE ?)"
-            )
-            conditions.append(text_conditions)
-            params.extend([filter_pattern] * 6)
-
-        # Server-side level filter
+        # 1. Level Filter
         if level_filter:
-            conditions.append("LOWER(log_level) = ?")
-            params.append(level_filter.lower())
-
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-        count_query = f"SELECT COUNT(*) FROM logs {where_clause}"
-        total_logs = c.execute(count_query, params).fetchone()[0]
+            query = query.filter(LogEntry.log_level.ilike(level_filter))
+            
+        # 2. Text Search
+        if filter_text:
+            search = f"%{filter_text}%"
+            query = query.filter(
+                or_(
+                    LogEntry.log_title.ilike(search),
+                    LogEntry.log_message.ilike(search),
+                    LogEntry.username.ilike(search),
+                    LogEntry.remote_addr.ilike(search),
+                    LogEntry.hardware_id.ilike(search),
+                    LogEntry.user_id.ilike(search)
+                )
+            )
+            
+        # 3. Get total count for pagination
+        total_logs = query.count()
         total_pages = max(1, (total_logs + page_size - 1) // page_size)
-
-        data_query = f"SELECT * FROM logs {where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
-        c.execute(data_query, params + [page_size, offset])
-        logs = c.fetchall()
-
+        
+        # 4. Paginate and fetch
+        offset = (page - 1) * page_size
+        logs = query.order_by(LogEntry.id.desc()).offset(offset).limit(page_size).all()
+        
         return logs, total_pages
         
     finally:
-        conn.close()
+        db.close()
 
 async def update_active_user(user_id: str, username: str, photo_url: str):
     """
@@ -893,70 +857,53 @@ async def get_expiry_time_by_user_id(request: UserIdRequest, db: Session = Depen
 # In main.py (inside @app.post("/log"))
 
 @app.post("/log")
-async def submit_log(log_data: LogEntryData, request: Request):
+async def submit_log(log_data: LogEntryData, request: Request, db: Session = Depends(get_logs_db)):
     """Handles structured log submissions from the client."""
     # 1. API Key Check
     secret_key = request.headers.get("X-Secret-Key")
     if secret_key != LOGGING_API_KEY:
         raise HTTPException(status_code=401, detail="Invalid X-Secret-Key for logging API")
 
-    # 2. Prepare Data (Use Pydantic V2 conventions)
-    # Changed from .dict() to .model_dump() for V2 compatibility
+    # 2. Prepare Data
     structured_data = log_data.model_dump() 
     
-    # Request data
-    request_data = {
-        'timestamp': datetime.now(timezone.utc).isoformat(),
-        'method': request.method,
-        'path': request.url.path,
-        'headers': json.dumps(dict(request.headers)),
-        'remote_addr': request.client.host,
-        
-        # CRITICAL FIX for Pydantic V2: 
-        # Use model_dump_json() instead of .json()
-        'raw_body': log_data.model_dump_json(indent=2) # <- FIX
-    }
-
-    log_entry = {**structured_data, **request_data}
+    # 3. Create Log Entry Object
+    new_log = LogEntry(
+        **structured_data,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        method=request.method,
+        path=request.url.path,
+        headers=json.dumps(dict(request.headers)),
+        remote_addr=request.client.host,
+        raw_body=log_data.model_dump_json(indent=2),
+        profile_url=f"https://supreme-cheats.xyz/forum/index.php?members/{structured_data.get('user_id', '')}"
+    )
     
-    # 3. Insert into DB (rest of function unchanged from previous fix)
+    # Fallback for photo
+    if not new_log.user_photo_url:
+        new_log.user_photo_url = '/logs/static/default-user.png'
+
     try:
-        def insert_log(entry: Dict[str, Any]):
-            # ... (SQLite connection and insert logic)
-            conn = sqlite3.connect(LOG_DATABASE_FILE)
-            c = conn.cursor()
-            
-            column_names = list(entry.keys())
-            placeholders = ', '.join(['?'] * len(column_names))
-            columns_str = ', '.join(column_names)
-            values = tuple(entry.values())
-            
-            c.execute(f"INSERT INTO logs ({columns_str}) VALUES ({placeholders})", values)
-            last_id = c.lastrowid
-            conn.commit()
-            conn.close()
-            return last_id
-            
-        last_id = await asyncio.to_thread(insert_log, log_entry) 
-        log_entry['id'] = last_id
+        db.add(new_log)
+        db.commit()
+        db.refresh(new_log)
         
-        # 🌟 SSE FIX: Add extra fields needed by the frontend before publishing
-        log_entry['profile_url'] = f"https://supreme-cheats.xyz/forum/index.php?members/{log_entry.get('user_id', '')}"
-        if not log_entry.get('user_photo_url'):
-            log_entry['user_photo_url'] = '/logs/static/default-user.png'
+        # Prepare for Redis publish (as a dict)
+        log_dict = {c.name: getattr(new_log, c.name) for c in new_log.__table__.columns}
             
-        # 🌟 SSE FIX: Publish the newly created log to Redis for real-time streaming
-        await redis_manager.publish_log(LOG_CHANNEL, log_entry)
+        # Publish to Redis for real-time streaming
+        await redis_manager.publish_log(LOG_CHANNEL, log_dict)
 
     except Exception as e:
-        logger.error(f"Failed to insert log entry: {e}")
+        db.rollback()
+        logger.error(f"Failed to insert PostgreSQL log entry: {e}")
         raise HTTPException(status_code=500, detail="Failed to record log")
 
     # 4. Update Active User Tracker
-    log_level = log_entry.get('log_level', 'INFO').upper()
-    user_id = log_entry['user_id']
-    username = log_entry['username']
-    photo_url = log_entry.get('user_photo_url', '')
+    log_level = (structured_data.get('log_level') or 'INFO').upper()
+    user_id = structured_data.get('user_id')
+    username = structured_data.get('username')
+    photo_url = new_log.user_photo_url
 
     if log_level != 'ERROR' and user_id != 'N/A' and user_id:
         await update_active_user(user_id, username, photo_url)
@@ -1035,6 +982,42 @@ async def logout(request: Request):
     response.delete_cookie(key=SESSION_COOKIE_NAME)
     return response
 
+@app.get("/health")
+async def health_check():
+    """Lightweight health check endpoint for Dokploy container monitoring.
+    Checks Redis, MySQL, and PostgreSQL (Logs) connectivity.
+    """
+    health = {"status": "ok", "services": {}}
+
+    # 1. Check Redis
+    try:
+        await redis_manager.client.ping()
+        health["services"]["redis"] = "connected"
+    except Exception as e:
+        health["status"] = "error"
+        health["services"]["redis"] = f"unreachable: {e}"
+
+    # 2. Check MySQL (Tokens)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        health["services"]["mysql"] = "connected"
+    except Exception as e:
+        health["status"] = "error"
+        health["services"]["mysql"] = f"unreachable: {e}"
+
+    # 3. Check PostgreSQL (Logs)
+    try:
+        with logs_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        health["services"]["postgresql_logs"] = "connected"
+    except Exception as e:
+        health["status"] = "error"
+        health["services"]["postgresql_logs"] = f"unreachable: {e}"
+
+    status_code = 200 if health["status"] == "ok" else 503
+    return JSONResponse(content=health, status_code=status_code)
+
 @app.get("/", response_class=HTMLResponse)
 async def root_redirect():
     """Redirects the root path to the main logs dashboard."""
@@ -1058,7 +1041,11 @@ async def show_logs(request: Request, session_id: str = Depends(require_dashboar
     
     logs_data, total_pages = await asyncio.to_thread(get_logs, filter_text, level_filter, page=page)
     
-    logs = [dict(log) for log in logs_data]
+    # Convert SQLAlchemy objects to dicts for templates
+    logs = []
+    for log in logs_data:
+        log_dict = {c.name: getattr(log, c.name) for c in log.__table__.columns}
+        logs.append(log_dict)
 
     return templates.TemplateResponse("logs.html", {
         "request": request,

@@ -18,7 +18,6 @@ services:
       - DOWNLOAD_FILE_PATH=/main-server/Loader/client.exe
     volumes:
       - loader_data:/main-server/Loader
-      - logs_data:/main-server/data
     depends_on:
       redis:
         condition: service_healthy
