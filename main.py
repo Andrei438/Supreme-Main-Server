@@ -283,8 +283,8 @@ redis_manager = RedisManager(REDIS_URL)
 rate_limit_data = defaultdict(list)
 
 # 🌟 SECURITY FIX: Add a separate rate limiter for login attempts
-# Session constants
-SESSION_TIMEOUT_MINUTES = 60
+# Session constants (30 days = 43200 minutes)
+SESSION_TIMEOUT_MINUTES = 43200
 SESSION_COOKIE_NAME = "X-Session-ID"
 
 def format_iso_timestamp(iso_str):
