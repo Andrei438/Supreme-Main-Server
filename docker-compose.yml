@@ -30,9 +30,17 @@ services:
       retries: 3
     labels:
       - "traefik.enable=true"
+      # Primary domain (all paths)
       - "traefik.http.routers.main-server.rule=Host(`cloud.supreme-cheats.xyz`)"
       - "traefik.http.routers.main-server.entrypoints=websecure"
       - "traefik.http.routers.main-server.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.main-server.service=main-server"
+      # Admin subdomain → /logs/* only
+      - "traefik.http.routers.main-server-admin.rule=Host(`admin.supreme-cheats.xyz`) && PathPrefix(`/logs`)"
+      - "traefik.http.routers.main-server-admin.entrypoints=websecure"
+      - "traefik.http.routers.main-server-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.main-server-admin.service=main-server"
+      # Shared backend
       - "traefik.http.services.main-server.loadbalancer.server.port=8000"
     networks:
       - dokploy-network

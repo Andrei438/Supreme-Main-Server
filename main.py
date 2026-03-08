@@ -1040,6 +1040,12 @@ async def root_redirect():
     """Redirects the root path to the main logs dashboard."""
     return RedirectResponse(url="/logs/view")
 
+@app.get("/logs", response_class=HTMLResponse)
+@app.get("/logs/", response_class=HTMLResponse)
+async def logs_redirect():
+    """Redirects /logs and /logs/ to /logs/view for subdomain proxy compatibility."""
+    return RedirectResponse(url="/logs/view")
+
 @app.get("/logs/view", response_class=HTMLResponse)
 async def show_logs(request: Request, session_id: str = Depends(require_dashboard_session_html)):
     filter_text = request.query_params.get("filter", "")
