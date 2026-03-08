@@ -651,6 +651,39 @@ async def upload_loader(
 
 
 # =========================================================================
+# 📤 WEB UPLOAD INTERFACE (Admin Dashboard)
+# =========================================================================
+
+@app.get("/logs/upload")
+async def get_upload_page(request: Request):
+    """Serves the secure upload page. Requires 2FA session."""
+    try:
+        # Check session manually since we need to handle the redirect differently if needed
+        # but require_dashboard_session_html does exactly what we want.
+        await require_dashboard_session_html(request, JSONResponse({}))
+    except HTTPException as e:
+        if e.status_code == 303:
+            return RedirectResponse(url="/logs/login", status_code=303)
+        raise e
+
+    return templates.TemplateResponse("upload.html", {"request": request})
+
+@app.post("/logs/upload")
+async def handle_web_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    x_loader_key: str = Header(..., alias="X-Loader-Key")
+):
+    """Handles file upload from the web interface. Requires session + Loader Key."""
+    # 1. Session Check (Same as dashboard)
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_id or not await redis_manager.get_session(session_id):
+        raise HTTPException(status_code=401, detail="Session expired. Please log in.")
+
+    # 2. Reuse the core logic from the API upload endpoint
+    return await upload_loader(file, x_loader_key)
+
+# =========================================================================
 # 🚀 API ENDPOINTS (Loader/Token Logic)
 # =========================================================================
 
